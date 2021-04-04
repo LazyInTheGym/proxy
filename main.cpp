@@ -1,73 +1,97 @@
 #include <iostream>
+#include <cstring>
+#include <thread>
+
+// Socket Programming Headers
 #include <unistd.h>
-#include <stdio.h>
+#include <cstdio>
 #include <sys/socket.h>
-#include <stdlib.h>
+#include <cstdlib>
 #include <netinet/in.h>
-#include <string.h>
+
 #define PORT 8080
 
-int main() {
+void echo_back(int accepted_socket);
 
-    int server_fd, new_socket, valread;
-    struct sockaddr_in address;
+int create_listening_socket(){
+    int socket_fd;
     int opt = 1;
-    int addrlen = sizeof(address);
-    char buffer[1024] = {0};
-    const char *hello = "Hello from LazyInTheGym \n";
 
     // Creating socket file descriptor
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
+    if ((socket_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
     {
         perror("socket failed");
         exit(EXIT_FAILURE);
     }
 
     // Forcefully attaching socket to the port 8080
-
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR,
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR,
                    &opt, sizeof(opt)))
     {
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }
 
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT,
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEPORT,
                    &opt, sizeof(opt)))
     {
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }
+
+    return socket_fd;
+}
+
+int listen_for_client() {
+    int accepted_socket;
+    struct sockaddr_in address;
+    int addrlen = sizeof(address);
+
+    int server_fd = create_listening_socket();
 
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons( PORT );
+    address.sin_port = htons(PORT);
 
     // Forcefully attaching socket to the port 8080
-    if (bind(server_fd, (struct sockaddr *)&address,
-             sizeof(address))<0)
-    {
+    if (bind(server_fd, (struct sockaddr *) &address,
+             sizeof(address)) < 0) {
         perror("bind failed");
         exit(EXIT_FAILURE);
     }
-    if (listen(server_fd, 3) < 0)
-    {
+    if (listen(server_fd, 3) < 0) {
         perror("listen");
         exit(EXIT_FAILURE);
     }
-    if ((new_socket = accept(server_fd, (struct sockaddr *)&address,
-                             (socklen_t*)&addrlen))<0)
-    {
+
+    if ((accepted_socket = accept(server_fd, (struct sockaddr *) &address,
+                                  (socklen_t *) &addrlen)) < 0) {
         perror("accept");
         exit(EXIT_FAILURE);
+
     }
+    return accepted_socket;
+}
 
-    valread = read( new_socket , buffer, 1024);
+void echo_back(int accepted_socket) {
+    int bytes_read;
+    char buffer[1024] = {0};
+    bytes_read = read(accepted_socket , buffer, 1024);
     printf("%s\n",buffer );
-    printf("read bytes %d\n", valread);
+    printf("read bytes %d\n", bytes_read);
 
-    send(new_socket , hello , strlen(hello) , 0 );
-    printf("Hello message sent\n");
+    send(accepted_socket , buffer , bytes_read , 0 );
+    printf("Echo message sent\n");
+}
+
+int main() {
+
+
+    int accepted_socket = listen_for_client();
+    echo_back(accepted_socket);
+
 
     return 0;
 }
+
+
