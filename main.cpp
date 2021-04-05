@@ -88,8 +88,9 @@ int main() {
 
 
     int accepted_socket = listen_for_client();
-    echo_back(accepted_socket);
 
+    std::thread communication_thread(echo_back,accepted_socket);
+    communication_thread.join();
 
     return 0;
 }
