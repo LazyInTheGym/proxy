@@ -9,6 +9,9 @@
 #include <cstdlib>
 #include <netinet/in.h>
 
+#include <netdb.h>
+
+
 #define PORT 8080
 
 void echo_back(int accepted_socket);
@@ -86,11 +89,13 @@ void echo_back(int accepted_socket) {
 
 int main() {
 
+    struct hostent *lh = gethostbyname("www.google.com");
 
-    int accepted_socket = listen_for_client();
+    std::cout << lh-> ;
 
-    std::thread communication_thread(echo_back,accepted_socket);
-    communication_thread.join();
+//    int accepted_socket = listen_for_client();
+//    std::thread communication_thread(echo_back,accepted_socket);
+//    communication_thread.join();
 
     return 0;
 }
