@@ -3,99 +3,91 @@
 #include <thread>
 
 // Socket Programming Headers
-#include <unistd.h>
-#include <cstdio>
-#include <sys/socket.h>
 #include <cstdlib>
-#include <netinet/in.h>
-#include <netdb.h>
-
 
 #include <boost/asio.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
 
-#define PORT 8080
-
-void echo_back(int accepted_socket);
-
-int create_listening_socket(){
-    int socket_fd;
-    int opt = 1;
-
-    // Creating socket file descriptor
-    if ((socket_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
-    {
-        perror("socket failed");
-        exit(EXIT_FAILURE);
-    }
-
-    // Forcefully attaching socket to the port 8080
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR,
-                   &opt, sizeof(opt)))
-    {
-        perror("setsockopt");
-        exit(EXIT_FAILURE);
-    }
-
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEPORT,
-                   &opt, sizeof(opt)))
-    {
-        perror("setsockopt");
-        exit(EXIT_FAILURE);
-    }
-
-    return socket_fd;
+boost::asio::io_context& io_context()
+{
+    static boost::asio::io_context svc;
+    return svc;
 }
 
-int listen_for_client() {
-    int accepted_socket;
-    struct sockaddr_in address;
-    int addrlen = sizeof(address);
+char local_data[1024] = {0};
+char remote_data[1024] = {0};
 
-    int server_fd = create_listening_socket();
+void handle_read(
+        boost::asio::ip::tcp::socket& read_from,
+        boost::asio::ip::tcp::socket& write_to,
+        char* read_buffer,
+        size_t bytes,
+        const boost::system::error_code& e)
+{
+    // this function is called whenever data is received
 
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    // for debugging purposes, show the data in the console window
+    // or write to file, or whatever...
+    std::string data(read_buffer, read_buffer + bytes);
+    std::cout << data << "\n";
 
-    // Forcefully attaching socket to the port 8080
-    if (bind(server_fd, (struct sockaddr *) &address,
-             sizeof(address)) < 0) {
-        perror("bind failed");
-        exit(EXIT_FAILURE);
-    }
-    if (listen(server_fd, 3) < 0) {
-        perror("listen");
-        exit(EXIT_FAILURE);
-    }
+    // forward the received data on to "the other side"
+    write_to.send(
+            boost::asio::buffer(read_buffer, bytes));
 
-    if ((accepted_socket = accept(server_fd, (struct sockaddr *) &address,
-                                  (socklen_t *) &addrlen)) < 0) {
-        perror("accept");
-        exit(EXIT_FAILURE);
-
-    }
-    return accepted_socket;
+    // read more data from "this side"
+    read_from.async_read_some(
+            boost::asio::buffer(read_buffer, 1024),
+            boost::bind(handle_read, boost::ref(read_from), boost::ref(write_to), read_buffer, boost::asio::placeholders::bytes_transferred, boost::asio::placeholders::error));
 }
 
-void echo_back(int accepted_socket) {
-    int bytes_read;
-    char buffer[1024] = {0};
-    bytes_read = read(accepted_socket , buffer, 1024);
-    printf("%s\n",buffer );
-    printf("read bytes %d\n", bytes_read);
+int main(int argc, char** argv)
+{
+    if(argc == 5)
+    {
+        boost::asio::io_service::work w(io_context());
 
-    send(accepted_socket , buffer , bytes_read , 0 );
-    printf("Echo message sent\n");
-}
+        boost::thread t(boost::bind(&boost::asio::io_service::run, (&io_context())));
 
-int main() {
+        // extract the connection information from the command line
+        boost::asio::ip::address local_address = boost::asio::ip::address::from_string(argv[1]);
+        uint16_t local_port = boost::lexical_cast<uint16_t>(argv[2]);
+        boost::asio::ip::address remote_address = boost::asio::ip::address::from_string(argv[3]);
+        uint16_t remote_port = boost::lexical_cast<uint16_t>(argv[4]);
 
-    int accepted_socket = listen_for_client();
-    std::thread communication_thread(echo_back,accepted_socket);
-    communication_thread.join();
+        boost::asio::ip::tcp::endpoint local_ep(local_address, local_port);
+        boost::asio::ip::tcp::endpoint remote_ep(remote_address, remote_port);
+
+        // start listening on the "local" socket -- note this does not
+        // have to be local, you could in theory forward through a remote device
+        // it's called "local" in the logical sense
+        boost::asio::ip::tcp::acceptor listen(io_context(), local_ep);
+        boost::asio::ip::tcp::socket local_socket(io_context());
+        listen.accept(local_socket);
+
+        // open the remote connection
+        boost::asio::ip::tcp::socket remote_socket(io_context());
+        remote_socket.open(remote_ep.protocol());
+        remote_socket.connect(remote_ep);
+
+        // start listening for data on the "local" connection
+        local_socket.async_receive(
+                boost::asio::buffer(local_data, 1024),
+                boost::bind(handle_read, boost::ref(local_socket), boost::ref(remote_socket), local_data, boost::asio::placeholders::bytes_transferred, boost::asio::placeholders::error));
+
+        // also listen for data on the "remote" connection
+        remote_socket.async_receive(
+                boost::asio::buffer(remote_data, 1024),
+                boost::bind(handle_read, boost::ref(remote_socket), boost::ref(local_socket), remote_data, boost::asio::placeholders::bytes_transferred, boost::asio::placeholders::error));
+
+        t.join();
+    }
+    else
+    {
+        std::cout << "proxy <local ip> <port> <remote ip> <port>\n";
+    }
 
     return 0;
 }
