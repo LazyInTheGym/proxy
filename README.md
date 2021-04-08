@@ -2,7 +2,7 @@
 a simple C++ proxy to forward queries
 
 ## Dependencies
-### Boost.ASIO
+### Boost.Asio
 #### 1- Using the official way
 - Download and unzip : [https://dl.bintray.com/boostorg/release/1.75.0/source/boost_1_75_0.tar.gz](https://dl.bintray.com/boostorg/release/1.75.0/source/boost_1_75_0.tar.gz)
 

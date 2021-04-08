@@ -8,9 +8,13 @@
 #include <sys/socket.h>
 #include <cstdlib>
 #include <netinet/in.h>
-
 #include <netdb.h>
 
+
+#include <boost/asio.hpp>
+#include <boost/lexical_cast.hpp>
+#include <boost/thread.hpp>
+#include <boost/bind.hpp>
 
 #define PORT 8080
 
@@ -89,13 +93,9 @@ void echo_back(int accepted_socket) {
 
 int main() {
 
-    struct hostent *lh = gethostbyname("www.google.com");
-
-    std::cout << lh-> ;
-
-//    int accepted_socket = listen_for_client();
-//    std::thread communication_thread(echo_back,accepted_socket);
-//    communication_thread.join();
+    int accepted_socket = listen_for_client();
+    std::thread communication_thread(echo_back,accepted_socket);
+    communication_thread.join();
 
     return 0;
 }
