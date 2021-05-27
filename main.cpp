@@ -1,95 +1,116 @@
+//
+// server.cpp
+// ~~~~~~~~~~
+//
+// Copyright (c) 2003-2020 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+
+#include <ctime>
 #include <iostream>
-#include <cstring>
-#include <thread>
-
-// Socket Programming Headers
-#include <cstdlib>
-
+#include <string>
+#include <boost/bind/bind.hpp>
+#include <boost/shared_ptr.hpp>
+#include <boost/enable_shared_from_this.hpp>
 #include <boost/asio.hpp>
-#include <boost/lexical_cast.hpp>
-#include <boost/thread.hpp>
-#include <boost/bind.hpp>
 
-boost::asio::io_context& io_context()
+using boost::asio::ip::tcp;
+
+std::string make_daytime_string()
 {
-    static boost::asio::io_context svc;
-    return svc;
+    using namespace std; // For time_t, time and ctime;
+    time_t now = time(0);
+    return ctime(&now);
 }
 
-char local_data[1024] = {0};
-char remote_data[1024] = {0};
-
-void handle_read(
-        boost::asio::ip::tcp::socket& read_from,
-        boost::asio::ip::tcp::socket& write_to,
-        char* read_buffer,
-        size_t bytes,
-        const boost::system::error_code& e)
+class tcp_connection
+        : public boost::enable_shared_from_this<tcp_connection>
 {
-    // this function is called whenever data is received
+public:
+    typedef boost::shared_ptr<tcp_connection> pointer;
 
-    // for debugging purposes, show the data in the console window
-    // or write to file, or whatever...
-    std::string data(read_buffer, read_buffer + bytes);
-    std::cout << data << "\n";
-
-    // forward the received data on to "the other side"
-    write_to.send(
-            boost::asio::buffer(read_buffer, bytes));
-
-    // read more data from "this side"
-    read_from.async_read_some(
-            boost::asio::buffer(read_buffer, 1024),
-            boost::bind(handle_read, boost::ref(read_from), boost::ref(write_to), read_buffer, boost::asio::placeholders::bytes_transferred, boost::asio::placeholders::error));
-}
-
-int main(int argc, char** argv)
-{
-    if(argc == 5)
+    static pointer create(boost::asio::io_context& io_context)
     {
-        boost::asio::io_service::work w(io_context());
-
-        boost::thread t(boost::bind(&boost::asio::io_service::run, (&io_context())));
-
-        // extract the connection information from the command line
-        boost::asio::ip::address local_address = boost::asio::ip::address::from_string(argv[1]);
-        uint16_t local_port = boost::lexical_cast<uint16_t>(argv[2]);
-        boost::asio::ip::address remote_address = boost::asio::ip::address::from_string(argv[3]);
-        uint16_t remote_port = boost::lexical_cast<uint16_t>(argv[4]);
-
-        boost::asio::ip::tcp::endpoint local_ep(local_address, local_port);
-        boost::asio::ip::tcp::endpoint remote_ep(remote_address, remote_port);
-
-        // start listening on the "local" socket -- note this does not
-        // have to be local, you could in theory forward through a remote device
-        // it's called "local" in the logical sense
-        boost::asio::ip::tcp::acceptor listen(io_context(), local_ep);
-        boost::asio::ip::tcp::socket local_socket(io_context());
-        listen.accept(local_socket);
-
-        // open the remote connection
-        boost::asio::ip::tcp::socket remote_socket(io_context());
-        remote_socket.open(remote_ep.protocol());
-        remote_socket.connect(remote_ep);
-
-        // start listening for data on the "local" connection
-        local_socket.async_receive(
-                boost::asio::buffer(local_data, 1024),
-                boost::bind(handle_read, boost::ref(local_socket), boost::ref(remote_socket), local_data, boost::asio::placeholders::bytes_transferred, boost::asio::placeholders::error));
-
-        // also listen for data on the "remote" connection
-        remote_socket.async_receive(
-                boost::asio::buffer(remote_data, 1024),
-                boost::bind(handle_read, boost::ref(remote_socket), boost::ref(local_socket), remote_data, boost::asio::placeholders::bytes_transferred, boost::asio::placeholders::error));
-
-        t.join();
+        return pointer(new tcp_connection(io_context));
     }
-    else
+
+    tcp::socket& socket()
     {
-        std::cout << "proxy <local ip> <port> <remote ip> <port>\n";
+        return socket_;
+    }
+
+    void start()
+    {
+        message_ = make_daytime_string();
+        message_.append("This a message from Ahmad's servers\n");
+        boost::asio::async_write(socket_, boost::asio::buffer(message_),
+                                 boost::bind(&tcp_connection::handle_write, shared_from_this(),
+                                             boost::asio::placeholders::error,
+                                             boost::asio::placeholders::bytes_transferred));
+    }
+
+private:
+    tcp_connection(boost::asio::io_context& io_context)
+            : socket_(io_context)
+    {
+    }
+
+    void handle_write(const boost::system::error_code& /*error*/,
+                      size_t /*bytes_transferred*/)
+    {
+    }
+
+    tcp::socket socket_;
+    std::string message_;
+};
+
+class tcp_server
+{
+public:
+    tcp_server(boost::asio::io_context& io_context)
+            : io_context_(io_context),
+              acceptor_(io_context, tcp::endpoint(tcp::v4(), 8080))
+    {
+        start_accept();
+    }
+
+private:
+    void start_accept()
+    {
+        tcp_connection::pointer new_connection =
+                tcp_connection::create(io_context_);
+
+        acceptor_.async_accept(new_connection->socket(),
+                               boost::bind(&tcp_server::handle_accept, this, new_connection,
+                                           boost::asio::placeholders::error));
+    }
+
+    void handle_accept(tcp_connection::pointer new_connection,
+                       const boost::system::error_code& error)
+    {
+        if (!error)
+        {
+            new_connection->start();
+        }
+
+        start_accept();
+    }
+
+    boost::asio::io_context& io_context_;
+    tcp::acceptor acceptor_;
+};
+
+int main() {
+    try {
+        boost::asio::io_context io_context;
+        tcp_server server(io_context);
+        io_context.run();
+    }
+    catch (std::exception &e) {
+        std::cerr << e.what() << std::endl;
     }
 
     return 0;
 }
-
-
