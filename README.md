@@ -33,5 +33,13 @@ brew install boost
 ```
 
 ## Test Commands
-`telnet localhost 8080`
+Test a single connection
+```sh
+nc -d localhost 8080
+```
+
+Test multiple simultaneous connections (e.g 5)
+```shell
+for i in {1..5}; do nc -d localhost 8080 &; done
+```
 
