@@ -83,16 +83,28 @@ class tcp_server {
 };
 
 int main() {
-  try {
-    boost::asio::io_context io_context;
-    tcp_server server(io_context);
+  // TODO: Uncomment this and work it out
+  //  try {
+  //    boost::asio::io_context io_context;
+  //    tcp_server server(io_context);
+  //
+  //    // This is a blocking call, it will not return as long as there is work to
+  //    // do i.e. the server is listening with `acceptor_.async_accept`
+  //    io_context.run();
+  //  } catch (std::exception& e) {
+  //    std::cerr << e.what() << std::endl;
+  //  }
 
-    // This is a blocking call, it will not return as long as there is work to
-    // do i.e. the server is listening with `acceptor_.async_accept`
-    io_context.run();
-  } catch (std::exception& e) {
-    std::cerr << e.what() << std::endl;
+  std::cout << "IP addresses: \n";
+  boost::asio::io_service io_service;
+  boost::asio::ip::tcp::resolver resolver(io_service);
+  boost::asio::ip::tcp::resolver::query query("www.facebook.com", "");
+  for (boost::asio::ip::tcp::resolver::iterator i = resolver.resolve(query);
+       i != boost::asio::ip::tcp::resolver::iterator(); ++i) {
+    boost::asio::ip::tcp::endpoint end = *i;
+    std::cout << end.address() << ' ';
   }
+  std::cout << '\n';
 
   return 0;
 }
